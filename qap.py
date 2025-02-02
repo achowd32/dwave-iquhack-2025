@@ -211,28 +211,19 @@ class QAP:
                     locations[row] = column
         
         #define nodes
-        nodes = {
-            0: "Loc. 1, Dept. " + str(locations[0] + 1),
-            1: "Loc. 2, Dept. " + str(locations[1] + 1),
-            2: "Loc. 3, Dept. " + str(locations[2] + 1),
-        }
+        nodes = {}
+        for i in range(len(boolean)):
+            nodes[i] = "Loc. " + str(i + 1) + ", Dept. " + str(locations[i] + 1)
 
         #add nodes
         graph.add_nodes_from(nodes.values())
 
         #add weighted edges
-        edges = [
-            (nodes[0], nodes[1], distance[0, 1], "Distance"),
-            (nodes[0], nodes[1], flow[0, 1], "Flow"),
-
-
-            (nodes[0], nodes[2], distance[0, 2], "Distance"),
-            (nodes[0], nodes[2], flow[0, 2], "Flow"),
-
-
-            (nodes[1], nodes[2], distance[1, 2], "Distance"),
-            (nodes[1], nodes[2], flow[1, 2], "Flow")
-            ]
+        edges = []
+        for i in range(len(boolean)):
+            for j in range(i + 1, len(boolean)):
+                edges.append((nodes[i], nodes[j], distance[i, j], "Distance"))
+                edges.append(((nodes[i], nodes[j], flow[i, j], "Flow")))
         
         for u, v, weight, label in edges:
             graph.add_edge(u, v, weight=weight, label=label)
