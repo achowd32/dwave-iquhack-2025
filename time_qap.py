@@ -1,9 +1,13 @@
 import numpy as np
 from dwave.samplers import SimulatedAnnealingSampler
+from dwave.system import DWaveSampler, EmbeddingComposite
 
 class time_QAP:
-    def __init__(self, flow: np.ndarray, dist: np.ndarray):
-        """Initialise the QAP class at time t = 0"""
+    def __init__(self, flow: np.ndarray, dist: np.ndarray, given_sampler = None):
+        """
+        Initialise the QAP class at time t = 0.
+        Sampler, if given, must be able to handle QUBO instances
+        """
         #ensure flow or distance are Numpy arrays
         if not isinstance(flow, np.ndarray):
             raise TypeError("Flow input must be a NumPy array.")
@@ -22,24 +26,36 @@ class time_QAP:
         if flow.shape != dist.shape:
             raise ValueError("Both arrays must have the same dimensions.")
         
-        #define class objects
+        #define flow, dist, and size objects
         self.flow = flow
         self.dist = dist
         self.size = flow.shape[0]
-        self.default_sampler = SimulatedAnnealingSampler()
+
+        #define time and location (state) objects
         self.time = 0
-        self.prev_loc = None
-        self.cur_loc = None
+        self.prev_state = None
+        self.cur_state = None
+
+        #define qubo, which is first generated with default penalty
         self.qubo = None
         self.generate_qubo()
+
+        #define default sampler, set to a simulator if no sampler specified
+        if given_sampler is None:
+            self.default_sampler = SimulatedAnnealingSampler()
+        else:
+            self.default_sampler = given_sampler
     
-    def generate_qubo(self, penalty: int = 400):
-        """Create a QUBO matrix from the flow and distance matrices of the class.
-        Default penalty of 100."""
-        #tensor product of flow and distance matrices
+    def generate_qubo(self, penalty: int = 10000):
+        """
+        Create a QUBO matrix from the flow and distance matrices of the class.
+        Does NOT account for transition penalties or facility-type penalties.
+        """
+        #tensor product (specifically Kronecker product) of flow and distance matrices
         Q = np.kron(self.flow, self.dist)
 
-        # Define row and column constraints
+        #define row and column constraints to ensure no facility is assigned
+        #more than one location, and no location has more than one facility
         constraint_groups = []
         N = self.size
         for i in range(N):
@@ -47,7 +63,7 @@ class time_QAP:
         for m in range(N):
             constraint_groups.append([m + N * i for i in range(N)])
 
-        # Apply the penalty in the correct form
+        #apply the penalty in the correct form
         for group in constraint_groups:
             for i in range(len(group)):
                 for j in range(i, len(group)):  # Upper triangular terms
@@ -61,60 +77,60 @@ class time_QAP:
         return Q
     
     def time_init(self):
-        """Initialises locations, allows for time evolution"""
-        if self.cur_loc is not None:
-            raise ValueError("Initialisation has already occurred, use time_evolve() instead") #fix this
-        resp = self.sample_qap(shots = 1000).first.sample
+        """
+        Initialises locations, allows for time evolution
+        """
+        #error if time and system state have already been initialised
+        if self.cur_state is not None:
+            raise RuntimeError("Initialisation has already occurred, use time_evolve() instead")
+        
+        #sample with the default_sampler
+        resp = self.sample_qap(shots = 5000).first.sample
         resp_arr = np.array(list(resp.values())).reshape((self.size, self.size))
-        self.cur_loc = resp_arr
+
+        #set current state to the best state from sample
+        self.cur_state = resp_arr
         return resp_arr
     
-    def time_evolve(self, new_flow: np.ndarray, penalty: int = 400):
-        """Evolve system according to new flow matrix. Default time step of 1, default qubo penalty of 100."""
-        if self.cur_loc is None:
-            raise ValueError("Initialisation has not occurred, use time_init() first")
+    def time_evolve(self, new_flow: np.ndarray, penalty: int = 100000):
+        """
+        Evolve system according to new flow matrix. Default time step of 1, default qubo penalty of 100.
+        """
+        #error if time and system state have not been initialised
+        if self.cur_state is None:
+            raise RuntimeError("Initialisation has not occurred, use time_init() first")
+
+        #set flow object to the new flow matrix
         self.flow = new_flow
         self.generate_qubo(penalty)
 
         #set new previous location to current location
-        new_prev = self.cur_loc
-        self.prev_loc = new_prev
+        new_prev = self.cur_state
+        self.prev_state = new_prev
 
         #add transition penalties
-        previous_locations = np.argmax(self.prev_loc, axis=1) #Get the index of the 1 in each row
+        previous_locations = np.argmax(self.prev_state, axis=1) #get the index of the 1 in each row
         move_penalty = 10
         N = self.size
         for i in range(N):
-            fac_prev_loc = previous_locations[i]  # Previous location of facility i
+            fac_prev_state = previous_locations[i]  #previous location of facility i
             for m in range(N):
-                move_penalty = move_penalty * d[fac_prev_loc, m]
+                move_penalty = move_penalty * self.dist[fac_prev_state, m]
                 self.qubo[i * N + m, i * N + m] += move_penalty
 
         #generate new locations by sampling
-        resp = self.sample_qap(shots = 1000).first.sample
+        resp = self.sample_qap(shots = 5000).first.sample
         resp_arr = np.array(list(resp.values())).reshape((self.size, self.size))
-        self.cur_loc = resp_arr
+        self.cur_state = resp_arr
+        self.time += 1
         return resp_arr
 
-    def sample_qap(self, sampler = None, shots: int = 100, penalty: int = 100):
-        """Optimize using QUBO generated from the generate_qubo() method.
-        Optional parameters for the sampler, number of reads, and QAP penalty."""
+    def sample_qap(self, sampler = None, shots: int = 100, penalty: int = 100000):
+        """
+        Optimize using current qubo object.
+        Optional parameters for the sampler, number of reads, and QAP penalty.
+        """
         if sampler is None:
             sampler = self.default_sampler
         response = sampler.sample_qubo(self.qubo, num_reads = shots)
         return response
-
-# Flow matrix (f)
-f = np.array([[0, 5, 2], [5, 0, 30], [2, 30, 0]])
-
-# Distance matrix (d)
-d = np.array([[0, 105, 15],
-        [8, 0, 13],
-        [15,13, 0]])
-d2 = np.array([[0, 20, 3],
-            [20, 0, 7],
-            [3, 7, 0]])
-
-test_qap = time_QAP(f, d)
-print(test_qap.time_init())
-print(test_qap.time_evolve(d2))
