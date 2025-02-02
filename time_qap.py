@@ -3,10 +3,11 @@ from dwave.samplers import SimulatedAnnealingSampler
 from dwave.system import DWaveSampler, EmbeddingComposite
 
 class time_QAP:
-    def __init__(self, flow: np.ndarray, dist: np.ndarray, given_sampler = None):
+    def __init__(self, flow: np.ndarray, dist: np.ndarray, num_closets = None, given_sampler = None):
         """
-        Initialise the QAP class at time t = 0.
-        Sampler, if given, must be able to handle QUBO instances
+        Initialise the QAP class at time t = 0. Sampler, if given, must be able to handle QUBO instances.
+        If considering the closets/departments distinction, an integer must be passed into num_closets.
+        The first num_closets rows of the flow matrix will be designated closets.
         """
         #ensure flow or distance are Numpy arrays
         if not isinstance(flow, np.ndarray):
@@ -35,6 +36,15 @@ class time_QAP:
         self.time = 0
         self.prev_state = None
         self.cur_state = None
+
+        #define num_closets
+        if not isinstance(num_closets, int) and num_closets is not None:
+            raise TypeError("Num_closets must either be None or integer")
+        
+        if isinstance(num_closets, int) and num_closets >= self.size:
+            raise ValueError("If closets are specified, there must be fewer closets than total facilities")
+
+        self.num_closets = num_closets
 
         #define qubo and row/column penalty; set to none and defined properly by generate_qubo()
         self.qubo = None
@@ -69,7 +79,7 @@ class time_QAP:
         for m in range(N):
             constraint_groups.append([m + N * i for i in range(N)])
 
-        #apply the penalty in the correct form
+        #apply the row/column penalty
         for group in constraint_groups:
             for i in range(len(group)):
                 for j in range(i, len(group)):  # Upper triangular terms
@@ -79,6 +89,17 @@ class time_QAP:
                     else:
                         Q[var_i, var_j] += penalty  # Quadratic interaction term
                         Q[var_j, var_i] += penalty  # Ensure symmetry
+        
+        #apply the closet/department penalty
+        if self.num_closets is not None:
+            for i in range(N):
+                if i < self.num_closets:
+                    for m in range(self.num_closets, N):
+                        Q[i * N + m, i * N + m] += self.row_col_penalty
+                else:
+                    for m in range(self.num_closets):
+                        Q[i * N + m, i * N + m] += self.row_col_penalty
+
         self.qubo = Q
         return Q
     
@@ -167,3 +188,10 @@ class time_QAP:
         #sample and return
         response = sampler.sample_qubo(self.qubo, num_reads = shots)
         return response
+
+qc_sampler = EmbeddingComposite(DWaveSampler())
+
+flow = np.array([[0, 3, 2], [3, 0, 4], [2, 4, 0]])
+dist = np.array([[0, 5, 1], [5, 0, 3], [1, 3, 0]])
+test_3 = time_QAP(flow, dist, 2, qc_sampler)
+print(test_3.time_init())
