@@ -102,13 +102,29 @@ class time_QAP:
         """
         Evolve system according to new flow matrix. Default time step of 1, default qubo penalty of 100.
         """
-        #initialise penalty if not given
-        if penalty is None:
-            penalty = self.row_col_penalty
-
         #error if time and system state have not been initialised
         if self.cur_state is None:
             raise RuntimeError("Initialisation has not occurred, use time_init() first")
+        
+        #error if new_flow is not a numpy array
+        if not isinstance(new_flow, np.ndarray):
+            raise TypeError("Flow input must be a NumPy array.")
+
+        #ensure new flow array is 2D
+        if new_flow.ndim != 2:
+            raise ValueError("Flow array must be 2D.")
+        
+        #ensure both dimensions are equal for new flow array
+        if new_flow.shape[0] != new_flow.shape[1]:
+            raise ValueError("Flow array must be a square matrix (rows = columns).")
+        
+        #ensure both arrays have the same shape
+        if new_flow.shape != self.dist.shape:
+            raise ValueError("Flow array must have the same dimensions as existing distance array.")
+
+        #initialise penalty if not given
+        if penalty is None:
+            penalty = self.row_col_penalty
 
         #set flow object to the new flow matrix
         self.flow = new_flow
@@ -151,16 +167,3 @@ class time_QAP:
         #sample and return
         response = sampler.sample_qubo(self.qubo, num_reads = shots)
         return response
-
-qc_sampler = EmbeddingComposite(DWaveSampler())
-
-fl1 = np.array([[0, 5, 10], [5, 0, 100], [10, 100, 0]])
-fl2 = np.array([[0, 100, 1], [100, 0, 1000], [1, 1000, 0]])
-fl3 = np.array([[0, 1, 75], [1, 0, 250], [75, 250, 0]])
-
-di = np.array([[0, 105, 100], [105, 0, 10], [100, 10, 0]])
-
-test_2 = time_QAP(fl1, di, qc_sampler)
-print(test_2.time_init())
-print(test_2.time_evolve(fl2))
-print(test_2.time_evolve(fl3))
