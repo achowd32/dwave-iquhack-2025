@@ -66,7 +66,7 @@ class QAP:
         """
         #tensor product (specifically Kronecker product) of flow and distance matrices
         Q = np.kron(self.flow, self.dist)
-        self.row_col_penalty = np.sum(Q)
+        self.row_col_penalty = (np.sum(Q)) ** 2
 
         #initialise penalty if not given
         if penalty is None:
@@ -105,7 +105,7 @@ class QAP:
         self.qubo = Q
         return Q
     
-    def time_init(self):
+    def time_init(self, num_shots: int = 100):
         """
         Initialises locations, allows for time evolution
         """
@@ -114,14 +114,14 @@ class QAP:
             raise RuntimeError("Initialisation has already occurred, use time_evolve() instead")
         
         #sample with the default_sampler
-        resp = self.sample_qap(shots = 5000).first.sample
+        resp = self.sample_qap(shots = num_shots).first.sample
         resp_arr = np.array(list(resp.values())).reshape((self.size, self.size))
 
         #set current state to the best state from sample
         self.cur_state = resp_arr
         return resp_arr
     
-    def time_evolve(self, new_flow: np.ndarray, penalty = None):
+    def time_evolve(self, new_flow: np.ndarray, num_shots: int = 100, penalty = None):
         """
         Evolve system according to new flow matrix. Default time step of 1, default qubo penalty of 100.
         """
@@ -168,7 +168,7 @@ class QAP:
                 self.qubo[i * N + m, i * N + m] += move_penalty
 
         #generate new locations by sampling
-        resp = self.sample_qap(shots = 5000).first.sample
+        resp = self.sample_qap(shots = num_shots).first.sample
         resp_arr = np.array(list(resp.values())).reshape((self.size, self.size))
         self.cur_state = resp_arr
         self.time += 1
@@ -193,7 +193,7 @@ class QAP:
     
     def show_state_graph(self):
         """
-        Convert matrix representation to graph representation and display
+        Convert current state from matrix to graph representation and display
         """
         #initialise variables, raise errors if necessary
         graph = nx.DiGraph()
@@ -213,7 +213,7 @@ class QAP:
         #define nodes
         nodes = {
             0: "Loc. 1, Dept. " + str(locations[0] + 1),
-            1: "Loc. 1, Dept. " + str(locations[1] + 1),
+            1: "Loc. 2, Dept. " + str(locations[1] + 1),
             2: "Loc. 3, Dept. " + str(locations[2] + 1),
         }
 
@@ -240,10 +240,10 @@ class QAP:
         #make layout
         pos = nx.spring_layout(graph, k=1.5)
 
-        #make layout
+        #shift node layouts
         pos = nx.spring_layout(graph, k=1.5)
         offset = 0.1 
-        pos_offset = {k: (v[0] + offset, v[1] + offset) for k, v in pos.items()}  # Shift node labels
+        pos_offset = {k: (v[0] + offset, v[1] + offset) for k, v in pos.items()}
 
         #create a figure before drawing
         plt.figure(figsize=(6, 6)) 
@@ -256,8 +256,8 @@ class QAP:
         edge_labels_flow = {(u, v): f"{weight} (Flow)" for u, v, weight, label in edges if label == "Flow"}
 
         #draw edge labels
-        nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels_distance, font_size=8, label_pos=0.3, bbox=dict(facecolor="white", edgecolor="none", boxstyle="round,pad=0.2"))  # Distance Label
-        nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels_flow, font_size=8, label_pos=0.7, bbox=dict(facecolor="white", edgecolor="none", boxstyle="round,pad=0.2"))  # Flow Label
+        nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels_distance, font_size=8, label_pos=0.3)
+        nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels_flow, font_size=8, label_pos=0.7) 
 
         #display graph
         plt.show()
