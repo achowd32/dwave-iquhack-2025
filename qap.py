@@ -1,8 +1,10 @@
 import numpy as np
+import networkx as nx
+import matplotlib.pyplot as plt
 from dwave.samplers import SimulatedAnnealingSampler
 from dwave.system import DWaveSampler, EmbeddingComposite
 
-class time_QAP:
+class QAP:
     def __init__(self, flow: np.ndarray, dist: np.ndarray, num_closets = None, given_sampler = None):
         """
         Initialise the QAP class at time t = 0. Sampler, if given, must be able to handle QUBO instances.
@@ -188,10 +190,74 @@ class time_QAP:
         #sample and return
         response = sampler.sample_qubo(self.qubo, num_reads = shots)
         return response
+    
+    def show_state_graph(self):
+        """
+        Convert matrix representation to graph representation and display
+        """
+        #initialise variables, raise errors if necessary
+        graph = nx.DiGraph()
+        flow = self.flow
+        distance = self.dist
+        boolean = self.cur_state
+        if boolean is None:
+            raise RuntimeError("Current state has not been initialised. Use time_init()")
 
-qc_sampler = EmbeddingComposite(DWaveSampler())
+        #find node locations
+        locations = np.zeros(len(boolean), dtype=int)
+        for row in range(len(boolean)):
+            for column in range(len(boolean[row])):
+                if boolean[row, column] == 1:
+                    locations[row] = column
+        
+        #define nodes
+        nodes = {
+            0: "Loc. 1, Dept. " + str(locations[0] + 1),
+            1: "Loc. 1, Dept. " + str(locations[1] + 1),
+            2: "Loc. 3, Dept. " + str(locations[2] + 1),
+        }
 
-flow = np.array([[0, 3, 2], [3, 0, 4], [2, 4, 0]])
-dist = np.array([[0, 5, 1], [5, 0, 3], [1, 3, 0]])
-test_3 = time_QAP(flow, dist, 2, qc_sampler)
-print(test_3.time_init())
+        #add nodes
+        graph.add_nodes_from(nodes.values())
+
+        #add weighted edges
+        edges = [
+            (nodes[0], nodes[1], distance[0, 1], "Distance"),
+            (nodes[0], nodes[1], flow[0, 1], "Flow"),
+
+
+            (nodes[0], nodes[2], distance[0, 2], "Distance"),
+            (nodes[0], nodes[2], flow[0, 2], "Flow"),
+
+
+            (nodes[1], nodes[2], distance[1, 2], "Distance"),
+            (nodes[1], nodes[2], flow[1, 2], "Flow")
+            ]
+        
+        for u, v, weight, label in edges:
+            graph.add_edge(u, v, weight=weight, label=label)
+        
+        #make layout
+        pos = nx.spring_layout(graph, k=1.5)
+
+        #make layout
+        pos = nx.spring_layout(graph, k=1.5)
+        offset = 0.1 
+        pos_offset = {k: (v[0] + offset, v[1] + offset) for k, v in pos.items()}  # Shift node labels
+
+        #create a figure before drawing
+        plt.figure(figsize=(6, 6)) 
+
+        #initial drawing
+        nx.draw(graph, pos, with_labels=True, node_color="lightblue", edge_color="black", node_size=1000, font_size=8, arrows=False)
+
+        # prepare edge labels
+        edge_labels_distance = {(u, v): f"{weight} (Distance)" for u, v, weight, label in edges if label == "Distance"}
+        edge_labels_flow = {(u, v): f"{weight} (Flow)" for u, v, weight, label in edges if label == "Flow"}
+
+        #draw edge labels
+        nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels_distance, font_size=8, label_pos=0.3, bbox=dict(facecolor="white", edgecolor="none", boxstyle="round,pad=0.2"))  # Distance Label
+        nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels_flow, font_size=8, label_pos=0.7, bbox=dict(facecolor="white", edgecolor="none", boxstyle="round,pad=0.2"))  # Flow Label
+
+        #display graph
+        plt.show()
